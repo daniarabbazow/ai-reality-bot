@@ -69,3 +69,37 @@
 SELECT item_id, COUNT(*) AS answers, ROUND(AVG(is_correct) * 100) AS pct_correct
 FROM answers GROUP BY item_id ORDER BY item_id;
 ```
+
+## Бесплатный деплой на Render.com (24/7)
+
+Бот работает как обычный Python-процесс на твоём компьютере — если
+компьютер выключен, бот недоступен. Чтобы он работал постоянно, можно
+бесплатно развернуть его на [Render.com](https://render.com) (карта не
+нужна):
+
+1. Зайди на render.com, зарегистрируйся через GitHub.
+2. **New + → Web Service**, выбери репозиторий `ai-reality-bot`.
+3. Настройки сборки (Render может подхватить их сам из `render.yaml`,
+   если нет — впиши вручную):
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python -m bot.main`
+   - **Plan**: Free
+4. В разделе **Environment** добавь переменную `BOT_TOKEN` со значением
+   токена от @BotFather (тот же, что в твоём `.env`).
+5. Нажми **Create Web Service** — Render соберёт и запустит бота.
+
+Бот сам открывает HTTP-порт (`bot/main.py`, health-check на `/`), чтобы
+Render видел сервис живым — это нужно, потому что Render ожидает от
+бесплатного веб-сервиса открытый порт, хотя самому боту (long polling)
+порт не требуется.
+
+**Важно:** бесплатный веб-сервис Render «засыпает» после ~15 минут без
+входящих HTTP-запросов. Чтобы бот не засыпал, добавь бесплатный монитор
+на [UptimeRobot](https://uptimerobot.com): тип HTTP(s), URL — адрес
+сервиса на Render (вида `https://ai-reality-bot-xxxx.onrender.com`),
+интервал — 5 минут.
+
+**Важно:** на бесплатном плане Render диск не сохраняется между
+перезапусками/деплоями — `bot.db` (статистика и кэш `file_id`) будет
+обнуляться. Для pet-проекта это не критично; если нужна постоянная
+статистика, потребуется платный диск или внешняя БД.
