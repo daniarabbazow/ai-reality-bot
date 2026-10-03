@@ -16,6 +16,7 @@ from bot.keyboards import (
     CategoryCB,
     LevelCB,
     NavCB,
+    TypeCB,
     answer_keyboard,
     categories_keyboard,
     error_keyboard,
@@ -23,6 +24,7 @@ from bot.keyboards import (
     main_menu_keyboard,
     result_keyboard,
     stats_keyboard,
+    types_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ MAIN_MENU_TEXT = (
     "Выбери раздел:"
 )
 
+TYPES_TEXT = "Выбери тип:"
 CATEGORIES_TEXT = "Выбери категорию:"
 
 # Serializes answer handling per chat so a near-simultaneous double tap
@@ -76,6 +79,31 @@ async def on_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(NavCB.filter(F.action == "types"))
+async def on_types(callback: CallbackQuery, state: FSMContext, content: Content) -> None:
+    await state.clear()
+    try:
+        await callback.message.edit_text(TYPES_TEXT, reply_markup=types_keyboard(content))
+    except Exception:
+        await callback.message.answer(TYPES_TEXT, reply_markup=types_keyboard(content))
+    await callback.answer()
+
+
+@router.callback_query(TypeCB.filter())
+async def on_type_chosen(
+    callback: CallbackQuery, callback_data: TypeCB, state: FSMContext, content: Content
+) -> None:
+    content_type = content.get_type(callback_data.type_id)
+    if content_type is None:
+        await callback.answer("Раздел не найден", show_alert=True)
+        return
+
+    await state.clear()
+    text = f"{content_type.title}\n{CATEGORIES_TEXT}"
+    await callback.message.edit_text(text, reply_markup=categories_keyboard(content_type))
+    await callback.answer()
+
+
 @router.callback_query(CategoryCB.filter())
 async def on_category_chosen(
     callback: CallbackQuery, callback_data: CategoryCB, state: FSMContext, content: Content
@@ -85,9 +113,10 @@ async def on_category_chosen(
         await callback.answer("Категория не найдена", show_alert=True)
         return
 
+    type_id = content.get_type_id_for_category(category.id) or ""
     await state.clear()
     text = f"{category.title}\nВыбери уровень:"
-    await callback.message.edit_text(text, reply_markup=levels_keyboard(category))
+    await callback.message.edit_text(text, reply_markup=levels_keyboard(category, type_id))
     await callback.answer()
 
 
@@ -112,13 +141,22 @@ async def on_level_chosen(
 
 @router.callback_query(NavCB.filter(F.action == "categories"))
 async def on_back_to_categories(
-    callback: CallbackQuery, state: FSMContext, content: Content
+    callback: CallbackQuery, callback_data: NavCB, state: FSMContext, content: Content
 ) -> None:
+    content_type = content.get_type(callback_data.type_id)
+    if content_type is None:
+        await on_types(callback, state, content)
+        return
+
     await state.clear()
     try:
-        await callback.message.edit_text(CATEGORIES_TEXT, reply_markup=categories_keyboard(content))
+        await callback.message.edit_text(
+            CATEGORIES_TEXT, reply_markup=categories_keyboard(content_type)
+        )
     except Exception:
-        await callback.message.answer(CATEGORIES_TEXT, reply_markup=categories_keyboard(content))
+        await callback.message.answer(
+            CATEGORIES_TEXT, reply_markup=categories_keyboard(content_type)
+        )
     await callback.answer()
 
 
@@ -127,7 +165,7 @@ async def on_stats(callback: CallbackQuery, content: Content) -> None:
     stats = await db.get_user_stats(callback.from_user.id)
 
     lines = ["📊 <b>Твоя статистика по категориям:</b>", ""]
-    for category in content.categories:
+    for category in content.all_categories():
         total, correct = stats.get(category.id, (0, 0))
         if total:
             pct = round(correct / total * 100)
@@ -326,6 +364,7 @@ async def _finish_level(
 
     all_correct = correct == total
     is_last_level = content.is_last_level(category_id, level)
+    type_id = content.get_type_id_for_category(category_id) or ""
 
     if all_correct:
         lines = [
@@ -351,6 +390,7 @@ async def _finish_level(
         reply_markup=result_keyboard(
             category_id=category_id,
             level=level,
+            type_id=type_id,
             all_correct=all_correct,
             is_last_level=is_last_level,
         ),
