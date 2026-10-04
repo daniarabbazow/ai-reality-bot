@@ -117,6 +117,45 @@
           ]
         }
           ]
+        },
+        {
+          "id": "tattoo",
+          "title": "🖋 Тату",
+          "levels": [
+            {
+              "level": 1,
+              "title": "Уровень 1 · лёгкий",
+              "items": [
+                {"id": "tattoo_l1_01", "type": "photo", "file": "images/tattoo/l1_01.png", "answer": "ai", "note": "Кофе с надписью на запястье"},
+                {"id": "tattoo_l1_02", "type": "photo", "file": "images/tattoo/l1_02.png", "answer": "real", "note": "Фотоаппарат на предплечье, девушка в кадре"},
+                {"id": "tattoo_l1_03", "type": "photo", "file": "images/tattoo/l1_03.png", "answer": "real", "note": "Предплечье с рисунками, пакет сока"},
+                {"id": "tattoo_l1_04", "type": "photo", "file": "images/tattoo/l1_04.png", "answer": "real", "note": "Фотоаппарат на кисти"},
+                {"id": "tattoo_l1_05", "type": "photo", "file": "images/tattoo/l1_05.png", "answer": "ai", "note": "Луна и DREAM на щиколотке"}
+              ]
+            },
+            {
+              "level": 2,
+              "title": "Уровень 2 · средний",
+              "items": [
+                {"id": "tattoo_l2_01", "type": "photo", "file": "images/tattoo/l2_01.png", "answer": "real", "note": "Рукав с японскими волнами"},
+                {"id": "tattoo_l2_02", "type": "photo", "file": "images/tattoo/l2_02.png", "answer": "ai", "note": "Папоротник и цветы на предплечье, скамейка"},
+                {"id": "tattoo_l2_03", "type": "photo", "file": "images/tattoo/l2_03.png", "answer": "real", "note": "Каллиграфия на всю руку"},
+                {"id": "tattoo_l2_04", "type": "photo", "file": "images/tattoo/l2_04.png", "answer": "ai", "note": "Змея с кинжалом на икре"},
+                {"id": "tattoo_l2_05", "type": "photo", "file": "images/tattoo/l2_05.png", "answer": "real", "note": "Надпись Saudade на предплечье"}
+              ]
+            },
+            {
+              "level": 3,
+              "title": "Уровень 3 · сложный",
+              "items": [
+                {"id": "tattoo_l3_01", "type": "photo", "file": "images/tattoo/l3_01.png", "answer": "real", "note": "Веер, процесс нанесения"},
+                {"id": "tattoo_l3_02", "type": "photo", "file": "images/tattoo/l3_02.png", "answer": "ai", "note": "Маяк в круге на предплечье"},
+                {"id": "tattoo_l3_03", "type": "photo", "file": "images/tattoo/l3_03.png", "answer": "real", "note": "Глитч-лицо в технике точек"},
+                {"id": "tattoo_l3_04", "type": "photo", "file": "images/tattoo/l3_04.png", "answer": "ai", "note": "Мотылёк и луны на плече"},
+                {"id": "tattoo_l3_05", "type": "photo", "file": "images/tattoo/l3_05.png", "answer": "real", "note": "Тату о путешествиях, Сиднейская опера"}
+              ]
+            }
+          ]
         }
       ]
     },
