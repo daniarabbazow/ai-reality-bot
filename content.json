@@ -160,12 +160,12 @@
       ]
     },
     {
-      "id": "poems",
-      "title": "✍️ Стихи",
+      "id": "text",
+      "title": "📝 Текст",
       "categories": [
         {
           "id": "poems",
-          "title": "📜 Классика",
+          "title": "✍️ Стихи",
           "levels": [
         {
           "level": 1,
@@ -201,16 +201,10 @@
           ]
         }
       ]
-    }
-      ]
     },
-    {
-      "id": "news",
-      "title": "📰 Новости",
-      "categories": [
         {
           "id": "news",
-          "title": "🗞 Короткие новости",
+          "title": "📰 Новости",
           "item_label": "Новость",
           "levels": [
             {
