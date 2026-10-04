@@ -212,7 +212,6 @@
           "id": "news",
           "title": "🗞 Короткие новости",
           "item_label": "Новость",
-          "show_answers_at_end": true,
           "levels": [
             {
               "level": 1,
