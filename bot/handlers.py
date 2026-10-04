@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
@@ -228,12 +229,27 @@ async def _start_level(
             "index": 0,
             "correct": 0,
             "answered_index": -1,
+            "correct_flags": [],
         }
     )
     await _send_question(bot=bot, chat_id=chat_id, state=state, content=content)
 
 
-_CAPTION_PREFIX = {"photo": "Фото", "text": "Стих"}
+_DEFAULT_ITEM_LABEL = {"photo": "Фото", "text": "Стих"}
+_ANSWER_LABEL = {"real": "Настоящая", "ai": "ИИ"}
+
+
+def _truncate_words(text: str, max_words: int = 7) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text.strip()
+    return " ".join(words[:max_words]) + "…"
+
+
+def _item_preview(item) -> str:
+    if item.type == "text":
+        return _truncate_words(item.text)
+    return "Фото"
 
 
 async def _send_question(
@@ -244,11 +260,13 @@ async def _send_question(
     level = data["level"]
     index = data["index"]
 
+    category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
     items = level_obj.items
     item = items[index]
     total = len(items)
-    caption = f"{_CAPTION_PREFIX[item.type]} {index + 1}/{total}"
+    label = category.item_label or _DEFAULT_ITEM_LABEL[item.type]
+    caption = f"{label} {index + 1}/{total}"
     markup = answer_keyboard(data["session_id"], index)
 
     try:
@@ -324,7 +342,8 @@ async def on_answer(
         )
 
         correct = data["correct"] + (1 if is_correct else 0)
-        await state.update_data(correct=correct)
+        correct_flags = data.get("correct_flags", []) + [is_correct]
+        await state.update_data(correct=correct, correct_flags=correct_flags)
 
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
@@ -360,7 +379,9 @@ async def _finish_level(
     data = await state.get_data()
     category_id = data["category_id"]
     level = data["level"]
+    category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
+    correct_flags = data.get("correct_flags", [])
 
     all_correct = correct == total
     is_last_level = content.is_last_level(category_id, level)
@@ -380,6 +401,14 @@ async def _finish_level(
         ]
     if is_last_level:
         lines.append("Это был последний уровень в категории — скоро добавим новые!")
+
+    if category.show_answers_at_end and correct_flags:
+        lines.append("")
+        lines.append("Разбор:")
+        for i, (item, was_correct) in enumerate(zip(level_obj.items, correct_flags), start=1):
+            mark = "✅" if was_correct else "❌"
+            preview = html_escape(_item_preview(item))
+            lines.append(f"{mark} {i}. {preview} — {_ANSWER_LABEL[item.answer]}")
 
     await state.set_state(GameStates.finished)
     await state.set_data({"category_id": category_id, "level": level})

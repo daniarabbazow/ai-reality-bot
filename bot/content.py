@@ -35,6 +35,8 @@ class Category:
     id: str
     title: str
     levels: list[Level]
+    item_label: Optional[str] = None
+    show_answers_at_end: bool = False
 
 
 @dataclass
@@ -124,6 +126,16 @@ def load_content(path: Optional[Path] = None) -> Content:
                 raise ContentError(f"Дублирующийся id категории: {cat_id!r}")
             seen_category_ids.add(cat_id)
 
+            item_label = cat_raw.get("item_label")
+            if item_label is not None and (
+                not isinstance(item_label, str) or not item_label.strip()
+            ):
+                raise ContentError(f"[{cat_id}] 'item_label' должен быть непустой строкой")
+
+            show_answers_at_end = cat_raw.get("show_answers_at_end", False)
+            if not isinstance(show_answers_at_end, bool):
+                raise ContentError(f"[{cat_id}] 'show_answers_at_end' должен быть true/false")
+
             levels: list[Level] = []
             for lvl_raw in sorted(cat_raw.get("levels", []), key=lambda l: l.get("level", 0)):
                 lvl_num = lvl_raw.get("level")
@@ -200,7 +212,15 @@ def load_content(path: Optional[Path] = None) -> Content:
             if not levels:
                 raise ContentError(f"[{cat_id}] в категории нет уровней")
 
-            categories.append(Category(id=cat_id, title=cat_title, levels=levels))
+            categories.append(
+                Category(
+                    id=cat_id,
+                    title=cat_title,
+                    levels=levels,
+                    item_label=item_label,
+                    show_answers_at_end=show_answers_at_end,
+                )
+            )
 
         if not categories:
             raise ContentError(f"[{type_id}] в типе нет категорий")
