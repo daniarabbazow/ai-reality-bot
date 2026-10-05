@@ -25,7 +25,9 @@ class AnswerCB(CallbackData, prefix="ans"):
 
 
 class NavCB(CallbackData, prefix="nav"):
-    action: str  # "menu" | "types" | "categories" | "retry" | "next" | "stats"
+    # "menu" | "types" | "categories" | "retry" | "next" | "stats"
+    # | "reveal_ask" | "reveal" | "reveal_back"
+    action: str
     type_id: str = ""
     category_id: str = ""
     level: int = 0
@@ -114,7 +116,13 @@ def answer_keyboard(session_id: str, index: int) -> InlineKeyboardMarkup:
 
 
 def result_keyboard(
-    *, category_id: str, level: int, type_id: str, all_correct: bool, is_last_level: bool
+    *,
+    category_id: str,
+    level: int,
+    type_id: str,
+    all_correct: bool,
+    is_last_level: bool,
+    offer_reveal: bool = True,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if not all_correct:
@@ -126,6 +134,15 @@ def result_keyboard(
                 ).pack(),
             )
         )
+        if offer_reveal:
+            builder.row(
+                InlineKeyboardButton(
+                    text="👀 Посмотреть правильные ответы",
+                    callback_data=NavCB(
+                        action="reveal_ask", category_id=category_id, level=level
+                    ).pack(),
+                )
+            )
     if all_correct and not is_last_level:
         builder.row(
             InlineKeyboardButton(
@@ -146,6 +163,20 @@ def result_keyboard(
             text="📂 Вернуться к категориям",
             callback_data=NavCB(action="categories", type_id=type_id).pack(),
         )
+    )
+    return builder.as_markup()
+
+
+def reveal_confirm_keyboard(category_id: str, level: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Да",
+            callback_data=NavCB(action="reveal", category_id=category_id, level=level).pack(),
+        ),
+        InlineKeyboardButton(
+            text="⬅️ Назад", callback_data=NavCB(action="reveal_back").pack()
+        ),
     )
     return builder.as_markup()
 

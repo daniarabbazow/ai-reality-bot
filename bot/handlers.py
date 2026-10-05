@@ -2,7 +2,6 @@ import asyncio
 import logging
 import time
 import uuid
-from html import escape as html_escape
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
@@ -11,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from bot import db
-from bot.content import BASE_DIR, Content
+from bot.content import BASE_DIR, Category, Content, Item
 from bot.keyboards import (
     AnswerCB,
     CategoryCB,
@@ -24,6 +23,7 @@ from bot.keyboards import (
     levels_keyboard,
     main_menu_keyboard,
     result_keyboard,
+    reveal_confirm_keyboard,
     stats_keyboard,
     types_keyboard,
 )
@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MAIN_MENU_TEXT = (
-    "👋 Привет! Это <b>AI REALITY</b> — игра, где нужно отличить фото или стих, "
-    "сделанный человеком, от того, что сгенерировала нейросеть.\n"
+    "👋 Привет! Это <b>AI REALITY</b>.\n\n"
+    "Нейросети научились подделывать очень убедительно — посмотрим, "
+    "получится ли у тебя их раскусить.\n\n"
     "Выбери раздел:"
 )
 
@@ -211,6 +212,71 @@ async def on_result_action(
     )
 
 
+@router.callback_query(NavCB.filter(F.action == "reveal_ask"))
+async def on_reveal_ask(callback: CallbackQuery, callback_data: NavCB) -> None:
+    await callback.message.answer(
+        "Точно показать правильные ответы? После этого пройти уровень честно уже не получится 🙂",
+        reply_markup=reveal_confirm_keyboard(callback_data.category_id, callback_data.level),
+    )
+    await callback.answer()
+
+
+@router.callback_query(NavCB.filter(F.action == "reveal_back"))
+async def on_reveal_back(callback: CallbackQuery) -> None:
+    try:
+        await callback.message.delete()
+    except Exception:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer()
+
+
+@router.callback_query(NavCB.filter(F.action == "reveal"))
+async def on_reveal(
+    callback: CallbackQuery, callback_data: NavCB, content: Content, bot: Bot
+) -> None:
+    category_id = callback_data.category_id
+    level = callback_data.level
+    category = content.get_category(category_id)
+    level_obj = content.get_level(category_id, level)
+    if category is None or level_obj is None:
+        await callback.answer("Уровень не найден", show_alert=True)
+        return
+
+    await callback.answer()
+    await callback.message.edit_text(f"👀 Правильные ответы — {level_obj.title}:")
+
+    chat_id = callback.message.chat.id
+    total = len(level_obj.items)
+    for i, item in enumerate(level_obj.items, start=1):
+        caption = (
+            f"{_item_label(category, item)} {i}/{total}\n"
+            f"Правильный ответ: {_ANSWER_LABEL[item.answer]}"
+        )
+        try:
+            await _send_item(bot, chat_id, item, caption)
+        except Exception:
+            logger.exception("Не удалось отправить ответ %s", item.id)
+            await bot.send_message(
+                chat_id,
+                "Не получилось загрузить ответы, попробуй ещё раз",
+                reply_markup=error_keyboard(),
+            )
+            return
+
+    await bot.send_message(
+        chat_id,
+        "Это все правильные ответы. Попробуешь ещё раз?",
+        reply_markup=result_keyboard(
+            category_id=category_id,
+            level=level,
+            type_id=content.get_type_id_for_category(category_id) or "",
+            all_correct=False,
+            is_last_level=content.is_last_level(category_id, level),
+            offer_reveal=False,
+        ),
+    )
+
+
 async def _start_level(
     *, bot: Bot, chat_id: int, state: FSMContext, content: Content, category_id: str, level: int
 ) -> None:
@@ -229,27 +295,34 @@ async def _start_level(
             "index": 0,
             "correct": 0,
             "answered_index": -1,
-            "correct_flags": [],
         }
     )
     await _send_question(bot=bot, chat_id=chat_id, state=state, content=content)
 
 
 _DEFAULT_ITEM_LABEL = {"photo": "Фото", "text": "Стих"}
-_ANSWER_LABEL = {"real": "Настоящая", "ai": "ИИ"}
+_ANSWER_LABEL = {"real": "🧑 Реально", "ai": "🤖 ИИ"}
 
 
-def _truncate_words(text: str, max_words: int = 7) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text.strip()
-    return " ".join(words[:max_words]) + "…"
+def _item_label(category: Category, item: Item) -> str:
+    return category.item_label or _DEFAULT_ITEM_LABEL[item.type]
 
 
-def _item_preview(item) -> str:
-    if item.type == "text":
-        return _truncate_words(item.text)
-    return "Фото"
+async def _send_item(
+    bot: Bot, chat_id: int, item: Item, caption: str, reply_markup=None
+) -> None:
+    if item.type == "photo":
+        cached_file_id = await db.get_cached_file_id(item.id)
+        photo = cached_file_id or FSInputFile(BASE_DIR / item.file)
+        sent = await bot.send_photo(
+            chat_id, photo=photo, caption=caption, reply_markup=reply_markup
+        )
+        if not cached_file_id:
+            await db.cache_file_id(item.id, sent.photo[-1].file_id)
+    else:
+        await bot.send_message(
+            chat_id, f"{caption}\n\n{item.text}", reply_markup=reply_markup, parse_mode=None
+        )
 
 
 async def _send_question(
@@ -262,27 +335,12 @@ async def _send_question(
 
     category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
-    items = level_obj.items
-    item = items[index]
-    total = len(items)
-    label = category.item_label or _DEFAULT_ITEM_LABEL[item.type]
-    caption = f"{label} {index + 1}/{total}"
+    item = level_obj.items[index]
+    caption = f"{_item_label(category, item)} {index + 1}/{len(level_obj.items)}"
     markup = answer_keyboard(data["session_id"], index)
 
     try:
-        if item.type == "photo":
-            cached_file_id = await db.get_cached_file_id(item.id)
-            photo = cached_file_id or FSInputFile(BASE_DIR / item.file)
-            sent = await bot.send_photo(
-                chat_id, photo=photo, caption=caption, reply_markup=markup
-            )
-
-            if not cached_file_id:
-                file_id = sent.photo[-1].file_id
-                await db.cache_file_id(item.id, file_id)
-        else:
-            text = f"{caption}\n\n{item.text}"
-            await bot.send_message(chat_id, text, reply_markup=markup, parse_mode=None)
+        await _send_item(bot, chat_id, item, caption, markup)
     except Exception:
         logger.exception("Не удалось отправить элемент %s", item.id)
         await bot.send_message(
@@ -342,8 +400,7 @@ async def on_answer(
         )
 
         correct = data["correct"] + (1 if is_correct else 0)
-        correct_flags = data.get("correct_flags", []) + [is_correct]
-        await state.update_data(correct=correct, correct_flags=correct_flags)
+        await state.update_data(correct=correct)
 
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
@@ -379,9 +436,7 @@ async def _finish_level(
     data = await state.get_data()
     category_id = data["category_id"]
     level = data["level"]
-    category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
-    correct_flags = data.get("correct_flags", [])
 
     all_correct = correct == total
     is_last_level = content.is_last_level(category_id, level)
@@ -401,14 +456,6 @@ async def _finish_level(
         ]
     if is_last_level:
         lines.append("Это был последний уровень в категории — скоро добавим новые!")
-
-    if category.show_answers_at_end and correct_flags:
-        lines.append("")
-        lines.append("Разбор:")
-        for i, (item, was_correct) in enumerate(zip(level_obj.items, correct_flags), start=1):
-            mark = "✅" if was_correct else "❌"
-            preview = html_escape(_item_preview(item))
-            lines.append(f"{mark} {i}. {preview} — {_ANSWER_LABEL[item.answer]}")
 
     await state.set_state(GameStates.finished)
     await state.set_data({"category_id": category_id, "level": level})

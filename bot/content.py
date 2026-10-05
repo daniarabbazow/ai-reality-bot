@@ -36,7 +36,6 @@ class Category:
     title: str
     levels: list[Level]
     item_label: Optional[str] = None
-    show_answers_at_end: bool = False
 
 
 @dataclass
@@ -132,10 +131,6 @@ def load_content(path: Optional[Path] = None) -> Content:
             ):
                 raise ContentError(f"[{cat_id}] 'item_label' должен быть непустой строкой")
 
-            show_answers_at_end = cat_raw.get("show_answers_at_end", False)
-            if not isinstance(show_answers_at_end, bool):
-                raise ContentError(f"[{cat_id}] 'show_answers_at_end' должен быть true/false")
-
             levels: list[Level] = []
             for lvl_raw in sorted(cat_raw.get("levels", []), key=lambda l: l.get("level", 0)):
                 lvl_num = lvl_raw.get("level")
@@ -218,7 +213,6 @@ def load_content(path: Optional[Path] = None) -> Content:
                     title=cat_title,
                     levels=levels,
                     item_label=item_label,
-                    show_answers_at_end=show_answers_at_end,
                 )
             )
 
