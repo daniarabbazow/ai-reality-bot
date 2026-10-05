@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
+from html import escape
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
@@ -10,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from bot import db
-from bot.content import BASE_DIR, Category, Content, Item
+from bot.content import BASE_DIR, Category, Content, ContentType, Item
 from bot.keyboards import (
     AnswerCB,
     CategoryCB,
@@ -39,8 +40,15 @@ MAIN_MENU_TEXT = (
     "Выбери раздел:"
 )
 
-TYPES_TEXT = "Выбери тип:"
-CATEGORIES_TEXT = "Выбери категорию:"
+TYPES_TEXT = "<b>📂 Категории</b>\nВыбери тип:"
+
+
+def _categories_text(content_type: ContentType) -> str:
+    return f"<b>{escape(content_type.title)}</b>\nВыбери категорию:"
+
+
+def _bar(filled: int, total: int, on: str = "▰", off: str = "▱") -> str:
+    return on * filled + off * (total - filled)
 
 # Serializes answer handling per chat so a near-simultaneous double tap
 # on the same photo can't be counted twice.
@@ -101,8 +109,9 @@ async def on_type_chosen(
         return
 
     await state.clear()
-    text = f"{content_type.title}\n{CATEGORIES_TEXT}"
-    await callback.message.edit_text(text, reply_markup=categories_keyboard(content_type))
+    await callback.message.edit_text(
+        _categories_text(content_type), reply_markup=categories_keyboard(content_type)
+    )
     await callback.answer()
 
 
@@ -117,7 +126,7 @@ async def on_category_chosen(
 
     type_id = content.get_type_id_for_category(category.id) or ""
     await state.clear()
-    text = f"{category.title}\nВыбери уровень:"
+    text = f"<b>{escape(category.title)}</b>\nВыбери уровень:"
     await callback.message.edit_text(text, reply_markup=levels_keyboard(category, type_id))
     await callback.answer()
 
@@ -151,14 +160,11 @@ async def on_back_to_categories(
         return
 
     await state.clear()
+    text = _categories_text(content_type)
     try:
-        await callback.message.edit_text(
-            CATEGORIES_TEXT, reply_markup=categories_keyboard(content_type)
-        )
+        await callback.message.edit_text(text, reply_markup=categories_keyboard(content_type))
     except Exception:
-        await callback.message.answer(
-            CATEGORIES_TEXT, reply_markup=categories_keyboard(content_type)
-        )
+        await callback.message.answer(text, reply_markup=categories_keyboard(content_type))
     await callback.answer()
 
 
@@ -166,14 +172,16 @@ async def on_back_to_categories(
 async def on_stats(callback: CallbackQuery, content: Content) -> None:
     stats = await db.get_user_stats(callback.from_user.id)
 
-    lines = ["📊 <b>Твоя статистика по категориям:</b>", ""]
+    lines = ["📊 <b>Твоя статистика</b>"]
     for category in content.all_categories():
         total, correct = stats.get(category.id, (0, 0))
+        lines.append("")
+        lines.append(f"<b>{escape(category.title)}</b>")
         if total:
             pct = round(correct / total * 100)
-            lines.append(f"{category.title}: <b>{pct}%</b> ({correct} из {total})")
+            lines.append(f"{_bar(round(pct / 10), 10)} {pct}% · {correct} из {total}")
         else:
-            lines.append(f"{category.title}: ещё нет ответов")
+            lines.append("ещё нет ответов")
 
     text = "\n".join(lines)
     try:
@@ -243,14 +251,16 @@ async def on_reveal(
         return
 
     await callback.answer()
-    await callback.message.edit_text(f"👀 Правильные ответы — {level_obj.title}:")
+    await callback.message.edit_text(
+        f"👀 <b>Правильные ответы</b>\n{escape(category.title)} · {escape(level_obj.title)}"
+    )
 
     chat_id = callback.message.chat.id
     total = len(level_obj.items)
     for i, item in enumerate(level_obj.items, start=1):
         caption = (
-            f"{_item_label(category, item)} {i}/{total}\n"
-            f"Правильный ответ: {_ANSWER_LABEL[item.answer]}"
+            f"<b>{_item_label(category, item)} {i}/{total}</b>\n"
+            f"Правильный ответ: <b>{_ANSWER_LABEL[item.answer]}</b>"
         )
         try:
             await _send_item(bot, chat_id, item, caption)
@@ -321,7 +331,9 @@ async def _send_item(
             await db.cache_file_id(item.id, sent.photo[-1].file_id)
     else:
         await bot.send_message(
-            chat_id, f"{caption}\n\n{item.text}", reply_markup=reply_markup, parse_mode=None
+            chat_id,
+            f"{caption}\n\n<blockquote>{escape(item.text)}</blockquote>",
+            reply_markup=reply_markup,
         )
 
 
@@ -336,7 +348,8 @@ async def _send_question(
     category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
     item = level_obj.items[index]
-    caption = f"{_item_label(category, item)} {index + 1}/{len(level_obj.items)}"
+    total = len(level_obj.items)
+    caption = f"<b>{_item_label(category, item)} {index + 1}/{total}</b>\n{_bar(index + 1, total)}"
     markup = answer_keyboard(data["session_id"], index)
 
     try:
@@ -436,24 +449,25 @@ async def _finish_level(
     data = await state.get_data()
     category_id = data["category_id"]
     level = data["level"]
+    category = content.get_category(category_id)
     level_obj = content.get_level(category_id, level)
 
     all_correct = correct == total
     is_last_level = content.is_last_level(category_id, level)
     type_id = content.get_type_id_for_category(category_id) or ""
 
-    if all_correct:
-        lines = [
-            f"🏁 {level_obj.title} пройден!",
-            f"Верных ответов: <b>{correct} из {total}</b>",
-            "🎉 Идеально! Ни одной ошибки.",
-        ]
-    else:
-        lines = [
-            f"🚫 {level_obj.title} не пройден.",
-            f"Верных ответов: <b>{correct} из {total}</b>",
-            "Чтобы пройти уровень, нужно ответить правильно на все вопросы — без единой ошибки.",
-        ]
+    title = escape(level_obj.title)
+    lines = [
+        f"🏁 <b>{title} пройден!</b>" if all_correct else f"🚫 <b>{title} не пройден</b>",
+        escape(category.title),
+        "",
+        f"Результат: <b>{correct} из {total}</b>",
+        _bar(correct, total, "🟩", "⬜"),
+        "",
+        "🎉 Идеально! Ни одной ошибки."
+        if all_correct
+        else "Чтобы пройти уровень, нужно ответить верно на все вопросы — без единой ошибки.",
+    ]
     if is_last_level:
         lines.append("Это был последний уровень в категории — скоро добавим новые!")
 
